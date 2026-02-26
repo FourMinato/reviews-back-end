@@ -1,6 +1,7 @@
 import express from "express";
 import bodyParser from "body-parser";
 import dotenv from 'dotenv';
+import path from 'path';
 dotenv.config();
 const cors = require("cors");
 
@@ -12,6 +13,7 @@ app.use(cors());
 
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 import { router as user } from "./api/user";
 import { router as subject } from "./api/subject";
