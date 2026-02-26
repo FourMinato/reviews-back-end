@@ -134,6 +134,7 @@ router.get("/getuser/question/:uid", (req, res) => {
 });
 
 
+// อัปเดตข้อมูลผู้ใช้และชื่อไฟล์รูปภาพ
 router.put("/update-user/:uid", (req: Request, res: Response) => {
   const uid = req.params.uid;
   const { name, email, anonymous_name, profile } = req.body;
