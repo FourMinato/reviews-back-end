@@ -134,5 +134,18 @@ router.get("/getuser/question/:uid", (req, res) => {
 });
 
 
+router.put("/update-user/:uid", (req: Request, res: Response) => {
+  const uid = req.params.uid;
+  const { name, email, anonymous_name, profile } = req.body;
+
+  const sql = `UPDATE users SET name = ?, email = ?, anonymous_name = ?, profile = ? WHERE uid = ?`;
+  conn.query(sql, [name, email, anonymous_name, profile, uid], (err, result) => {
+    if (err) {
+      console.error("SQL Error:", err);
+      return res.status(500).json({ status: false, message: "เกิดข้อผิดพลาดในการอัปเดต" });
+    }
+    res.json({ status: true, message: "อัปเดตโปรไฟล์สำเร็จ" });
+  });
+});
 
 
