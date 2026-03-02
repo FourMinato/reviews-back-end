@@ -1,74 +1,83 @@
 import express from "express";
 import { conn } from "../db";
-import path from "path";
-import fs from "fs";
 import multer from "multer";
-import { v4 as uuidv4 } from "uuid";
+import { createClient } from '@supabase/supabase-js';
 
 export const router = express.Router();
 
-class FileMiddleWare {
-  public filename = "";
-  public diskLoader: multer.Multer;
+const supabase = createClient(
+  process.env.SUPABASE_URL || '',
+  process.env.SUPABASE_KEY || ''
+);
 
-  constructor(subfolder: string = "") {
-    // ใช้ process.cwd() เพื่อชี้จาก Root ของโปรเจกต์
-    const targetDir = path.join(process.cwd(), "uploads", subfolder);
-    
-    if (!fs.existsSync(targetDir)) {
-      fs.mkdirSync(targetDir, { recursive: true });
-    }
+const upload = multer({ 
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 } 
+});
 
-    this.diskLoader = multer({
-      storage: multer.diskStorage({
-        destination: (_req, __file, cb) => {
-          cb(null, targetDir);
-        },
-        filename: (_req, file, cb) => {
-          const uniqueSuffix = uuidv4();
-          this.filename = uniqueSuffix + "." + file.originalname.split(".").pop();
-          cb(null, this.filename);
-        },
-      }),
-    });
-  }
-}
-
-const profileUpload = new FileMiddleWare("user-profile");
-
-// API อัปโหลดและลบรูปเก่า
-router.post("/upload-profile/:uid", profileUpload.diskLoader.single('profileImage'), (req, res) => {
+router.post("/upload-profile/:uid", upload.single('profileImage'), async (req, res) => {
   const uid = req.params.uid;
-  const newFileName = req.file?.filename;
+  const file = req.file;
 
-  if (!newFileName) {
-    res.status(400).json({ status: false, message: "ไฟล์ไม่เข้าโฟลเดอร์" });
-  } else {
-    // 1. หาชื่อไฟล์เก่ามาลบ
-    conn.query(`SELECT profile FROM users WHERE uid = ?`, [uid], (err, results: any) => {
+  if (!file) {
+    // แก้ไข: ลบ return หน้า res และใช้ return; แยกบรรทัด
+    res.status(400).json({ status: false, message: "ไม่พบไฟล์ภาพ" });
+    return; 
+  }
+
+  try {
+    conn.query(`SELECT profile FROM users WHERE uid = ?`, [uid], async (err, results: any) => {
+      if (err) {
+        res.status(500).json({ status: false, message: "Database Error" });
+        return;
+      }
+
       if (results && results.length > 0) {
-        const oldFileName = results[0].profile;
-        // ไม่ลบถ้าเป็นรูป Default
-        if (oldFileName && oldFileName !== '1e346a4b-7fb4-4f94-929d-9093df91ce85.jpg') {
-          const oldFilePath = path.join(process.cwd(), "uploads", "user-profile", oldFileName);
-          if (fs.existsSync(oldFilePath)) {
-            fs.unlinkSync(oldFilePath);
+        const oldUrl = results[0].profile;
+        if (oldUrl && oldUrl.includes("supabase.co")) {
+          const fileNameOld = oldUrl.split('/').pop();
+          if (fileNameOld) {
+            await supabase.storage
+              .from(process.env.SUPABASE_BUCKET || 'profiles')
+              .remove([fileNameOld]);
           }
         }
       }
 
-      // 2. อัปเดตชื่อไฟล์ใหม่ลง DB
-      conn.query(`UPDATE users SET profile = ? WHERE uid = ?`, [newFileName, uid], (err) => {
-        if (err) res.status(500).json({ status: false });
-        else res.json({ status: true, fileName: newFileName });
+      const fileExt = file.originalname.split('.').pop();
+      const fileName = `profile-${uid}-${Date.now()}.${fileExt}`;
+
+      const { data, error } = await supabase.storage
+        .from(process.env.SUPABASE_BUCKET || 'profiles')
+        .upload(fileName, file.buffer, {
+          contentType: file.mimetype,
+          upsert: true
+        });
+
+      if (error) {
+        res.status(500).json({ status: false, message: "Upload to Storage failed" });
+        return;
+      }
+
+      const { data: urlData } = supabase.storage
+        .from(process.env.SUPABASE_BUCKET || 'profiles')
+        .getPublicUrl(fileName);
+
+      const publicUrl = urlData.publicUrl;
+
+      conn.query(`UPDATE users SET profile = ? WHERE uid = ?`, [publicUrl, uid], (err) => {
+        if (err) {
+          res.status(500).json({ status: false });
+          return;
+        }
+        res.json({
+          status: true,
+          message: "อัปโหลดสำเร็จ",
+          fileName: publicUrl
+        });
       });
     });
+  } catch (error) {
+    res.status(500).json({ status: false, message: "Server Error" });
   }
-});
-
-// Route สำหรับอ่านไฟล์ (กรณีไม่ใช้ Static ตรงๆ)
-router.get("/user-profile/:filename", (req, res) => {
-  const filePath = path.join(process.cwd(), "uploads", "user-profile", req.params.filename);
-  if (fs.existsSync(filePath)) res.sendFile(filePath);
-  else res.status(404).send("Not Found");
 });
