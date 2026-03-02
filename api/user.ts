@@ -135,18 +135,41 @@ router.get("/getuser/question/:uid", (req, res) => {
 
 
 // อัปเดตข้อมูลผู้ใช้และชื่อไฟล์รูปภาพ
-router.put("/update-user/:uid", (req: Request, res: Response) => {
+// อัปเดตข้อมูลผู้ใช้และชื่อไฟล์รูปภาพ
+router.put("/update-user/:uid", async (req: Request, res: Response) => {
   const uid = req.params.uid;
-  const { name, email, anonymous_name, profile } = req.body;
+  const { name, email, anonymous_name, profile, password } = req.body;
 
-  const sql = `UPDATE users SET name = ?, email = ?, anonymous_name = ?, profile = ? WHERE uid = ?`;
-  conn.query(sql, [name, email, anonymous_name, profile, uid], (err, result) => {
-    if (err) {
-      console.error("SQL Error:", err);
-      return res.status(500).json({ status: false, message: "เกิดข้อผิดพลาดในการอัปเดต" });
-    }
-    res.json({ status: true, message: "อัปเดตโปรไฟล์สำเร็จ" });
-  });
+  try {
+    // 1. เช็คชื่อซ้ำก่อน (โค้ดเดิมของคุณ)
+    const checkSql = `SELECT uid FROM users WHERE name = ? AND uid != ?`;
+    conn.query(checkSql, [name, uid], async (err, results: any) => {
+      if (err) return res.status(500).json({ status: false, message: "Server Error" });
+      if (results.length > 0) return res.json({ status: false, message: "ชื่อผู้ใช้ซ้ำ" });
+
+      // 2. เตรียม Query และ Data
+      let sql: string;
+      let params: any[];
+
+      if (password) {
+        // ถ้ามีการส่งรหัสผ่านใหม่มา ให้ Hash ก่อน
+        const hashedPassword = await bcrypt.hash(password, 10);
+        sql = `UPDATE users SET name = ?, email = ?, anonymous_name = ?, profile = ?, password = ? WHERE uid = ?`;
+        params = [name, email, anonymous_name, profile, hashedPassword, uid];
+      } else {
+        // ถ้าไม่มีรหัสผ่านใหม่ ส่งมาแค่ข้อมูลเดิม
+        sql = `UPDATE users SET name = ?, email = ?, anonymous_name = ?, profile = ? WHERE uid = ?`;
+        params = [name, email, anonymous_name, profile, uid];
+      }
+
+      conn.query(sql, params, (err, result) => {
+        if (err) return res.status(500).json({ status: false, message: "แก้ไขไม่สำเร็จ" });
+        res.json({ status: true, message: "อัปเดตโปรไฟล์สำเร็จ" });
+      });
+    });
+  } catch (error) {
+    res.status(500).json({ status: false, message: "Hash error" });
+  }
 });
 
 
