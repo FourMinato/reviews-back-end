@@ -16,7 +16,7 @@ router.post("/register", async (req: Request, res: Response) => {
   try {
     const saltRounds = 10;
     const hashedPassword = await bcrypt.hash(password, saltRounds);
-    const defaultProfile = "1e346a4b-7fb4-4f94-929d-9093df91ce85.jpg";
+    const defaultProfile = "default-profile.png";
 
     conn.query("SELECT * FROM users WHERE email = ?", [email], (err, results: any) => {
       if (err) return res.status(500).json({ status: false, message: "เกิดข้อผิดพลาด" });
