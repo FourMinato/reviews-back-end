@@ -1,20 +1,18 @@
-import express from "express";
-import { conn } from "../db";
-import { UsersPostRequest } from "../request/userReq";
-import mysql from "mysql2";
-import { Router, Request, Response } from 'express';
-export const router = express.Router();
+import express, { Request, Response } from "express";
+import { conn } from "../../db";
+import { UpdateUserRequest } from "../../request/userReq";
 import bcrypt from "bcrypt";
 
-//Web REgister.
+export const router = express.Router();
+
 router.post("/register", async (req: Request, res: Response) => {
   const { name, email, password, anonymous_name, type } = req.body;
-
 
   if (!name || !email || !password) {
     res.status(400).json({ status: false, message: "กรุณากรอกข้อมูลให้ครบ" });
     return;
   }
+  
   try {
     const saltRounds = 10;
     const hashedPassword = await bcrypt.hash(password, saltRounds);
@@ -35,9 +33,9 @@ router.post("/register", async (req: Request, res: Response) => {
   }
 });
 
-//Web Login.
 router.post("/login", async (req: Request, res: Response): Promise<void> => {
   const { email, password, captcha } = req.body;
+  
   if (!email || !password) {
     res.status(400).json({ status: false, message: "กรุณาใส่ข้อมูลให้ครบ!" });
     return;
@@ -46,12 +44,15 @@ router.post("/login", async (req: Request, res: Response): Promise<void> => {
     res.json({ status: false, message: "โปรดยืนยันตัวตนด้วย reCAPTCHA" });
     return;
   }
+
   const verifyURL = `https://www.google.com/recaptcha/api/siteverify?secret=${process.env.reCaptchaSecret}&response=${captcha}`;
   const captchaResponse = await fetch(verifyURL).then(r => r.json());
+  
   if (!captchaResponse.success) {
     res.json({ status: false, message: "reCAPTCHA ไม่ถูกต้อง" });
     return;
   }
+
   const checkUser = "SELECT uid, type, password FROM users WHERE email=?";
   conn.query(checkUser, [email], async (err, result: any) => {
     if (err) return res.status(500).json({ status: false, message: "เกิดข้อผิดพลาดที่เซิร์ฟเวอร์" });
@@ -78,12 +79,11 @@ router.post("/login", async (req: Request, res: Response): Promise<void> => {
   });
 });
 
-
-// Get other user uid, name, profile.
 router.get("/getuser/:uid", (req, res) => {
   const uid = req.params.uid;
   const sql = `SELECT uid, name, email, profile FROM users WHERE uid = ?`;
-  conn.query(sql, [uid], (err, result) => {
+  
+  conn.query(sql, [uid], (err, result: any) => {
     if (err) {
       console.error("SQL Error:", err);
       return res.status(500).json({ status: false, message: "เกิดข้อผิดพลาด" });
@@ -95,33 +95,34 @@ router.get("/getuser/:uid", (req, res) => {
   });
 });
 
-// Get other user Reviews.
 router.get("/getuser/review/:uid", (req, res) => {
-    const uid = req.params.uid;
-    const sql = `
-        SELECT review.pid, subject.subcode, review.date, review.is_anonymous
-        FROM review
-        JOIN subject ON review.sid = subject.subid
-        WHERE review.uid = ? 
-        AND review.showpost = 1
-        ORDER BY review.date DESC
-    `;
+  const uid = req.params.uid;
+  const sql = `
+    SELECT review.pid, subject.subcode, review.date, review.is_anonymous
+    FROM review
+    JOIN subject ON review.sid = subject.subid
+    WHERE review.uid = ? 
+    AND review.showpost = 1
+    ORDER BY review.date DESC
+  `;
 
-    conn.query(sql, [uid], (err, result) => {
-        if (err) return res.status(500).json({ status: false, message: "เกิดข้อผิดพลาด" });
-        res.json({ status: true, data: result });
-      });
+  conn.query(sql, [uid], (err, result) => {
+    if (err) return res.status(500).json({ status: false, message: "เกิดข้อผิดพลาด" });
+    res.json({ status: true, data: result });
+  });
 });
 
-// Get other user Questions.
 router.get("/getuser/question/:uid", (req, res) => {
   const uid = req.params.uid;
-  const sql = `SELECT question.id, question.date
-      FROM question
-      WHERE question.uid = ?
-      AND question.open = 1
-      ORDER BY question.date DESC`;
-  conn.query(sql, [uid], (err, result) => {
+  const sql = `
+    SELECT question.id, question.date
+    FROM question
+    WHERE question.uid = ?
+    AND question.open = 1
+    ORDER BY question.date DESC
+  `;
+  
+  conn.query(sql, [uid], (err, result: any) => {
     if (err) {
       console.error("SQL Error:", err);
       return res.status(500).json({ status: false, message: "เกิดข้อผิดพลาด" });
@@ -133,37 +134,45 @@ router.get("/getuser/question/:uid", (req, res) => {
   });
 });
 
-
-// อัปเดตข้อมูลผู้ใช้และชื่อไฟล์รูปภาพ
-// อัปเดตข้อมูลผู้ใช้และชื่อไฟล์รูปภาพ
 router.put("/update-user/:uid", async (req: Request, res: Response) => {
   const uid = req.params.uid;
-  const { name, email, anonymous_name, profile, password } = req.body;
+  const body: UpdateUserRequest = req.body;
 
   try {
-    // 1. เช็คชื่อซ้ำก่อน (โค้ดเดิมของคุณ)
     const checkSql = `SELECT uid FROM users WHERE name = ? AND uid != ?`;
-    conn.query(checkSql, [name, uid], async (err, results: any) => {
-      if (err) return res.status(500).json({ status: false, message: "Server Error" });
-      if (results.length > 0) return res.json({ status: false, message: "ชื่อผู้ใช้ซ้ำ" });
-
-      // 2. เตรียม Query และ Data
-      let sql: string;
-      let params: any[];
-
-      if (password) {
-        // ถ้ามีการส่งรหัสผ่านใหม่มา ให้ Hash ก่อน
-        const hashedPassword = await bcrypt.hash(password, 10);
-        sql = `UPDATE users SET name = ?, email = ?, anonymous_name = ?, profile = ?, password = ? WHERE uid = ?`;
-        params = [name, email, anonymous_name, profile, hashedPassword, uid];
-      } else {
-        // ถ้าไม่มีรหัสผ่านใหม่ ส่งมาแค่ข้อมูลเดิม
-        sql = `UPDATE users SET name = ?, email = ?, anonymous_name = ?, profile = ? WHERE uid = ?`;
-        params = [name, email, anonymous_name, profile, uid];
+    conn.query(checkSql, [body.name, uid], async (err, results: any) => {
+      if (err) {
+        res.status(500).json({ status: false, message: "Server Error" });
+        return;
+      }
+      
+      if (results.length > 0) {
+        res.json({ status: false, message: "ชื่อผู้ใช้ซ้ำ" });
+        return;
       }
 
+      let sql = `UPDATE users SET name = ?, email = ?, anonymous_name = ?`;
+      const params: any[] = [body.name, body.email, body.anonymous_name];
+
+      if (body.profile && body.profile.startsWith('http')) {
+        sql += `, profile = ?`;
+        params.push(body.profile);
+      }
+
+      if (body.password) {
+        const hashedPassword = await bcrypt.hash(body.password, 10);
+        sql += `, password = ?`;
+        params.push(hashedPassword);
+      }
+
+      sql += ` WHERE uid = ?`;
+      params.push(uid);
+
       conn.query(sql, params, (err, result) => {
-        if (err) return res.status(500).json({ status: false, message: "แก้ไขไม่สำเร็จ" });
+        if (err) {
+          res.status(500).json({ status: false, message: "แก้ไขไม่สำเร็จ" });
+          return;
+        }
         res.json({ status: true, message: "อัปเดตโปรไฟล์สำเร็จ" });
       });
     });
@@ -171,5 +180,3 @@ router.put("/update-user/:uid", async (req: Request, res: Response) => {
     res.status(500).json({ status: false, message: "Hash error" });
   }
 });
-
-

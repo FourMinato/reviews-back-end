@@ -3,7 +3,7 @@ import path, { dirname } from "path";
 import multer from "multer";
 import { v4 as uuidv4 } from "uuid";
 import { conn } from "../db";
-import { UsersPostRequest } from "../request/userReq";
+import { UpdateUserRequest } from "../request/userReq";
 import mysql from "mysql2";
 import fs from "fs";
 import { Request, Response } from 'express';

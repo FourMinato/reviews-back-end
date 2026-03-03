@@ -1,6 +1,6 @@
 import { OAuth2Client } from "google-auth-library";
 import express from "express";
-import { conn } from "../db";
+import { conn } from "../../db";
 import { Request, Response } from 'express';
 import jwt from "jsonwebtoken";
 
